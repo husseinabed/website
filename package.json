@@ -2,9 +2,7 @@
   "name": "website",
   "type": "module",
   "private": true,
-  "engines": {
-    "node": ">=18 <19"
-  },
+ 
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
