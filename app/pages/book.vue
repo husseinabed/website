@@ -34,7 +34,12 @@
         </div>
 
         <div class="reveal card border border-slate-200 p-6" style="--reveal-delay: 140ms">
-          <component :is="activeComponent" v-model="form" :errors="errors" />
+          <component
+            :is="activeComponent"
+            :model-value="form"
+            @update:modelValue="(v) => Object.assign(form, v)"
+            :errors="errors"
+          />
 
           <!-- WhatsApp quick CTA (no redesign): sends a prefilled message with current selections -->
           <div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
