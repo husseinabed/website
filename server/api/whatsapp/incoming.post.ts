@@ -1,8 +1,14 @@
-import twilio from 'twilio'
-import { z } from 'zod'
-import { getHeader, getRequestURL, readRawBody, setResponseHeader, type H3Event } from 'h3'
-import { requireTwilioAuthToken } from '../../utils/useTwilio'
-import { broadcastWhatsAppIncoming } from '../../utils/whatsappIncomingWs'
+import twilio from "twilio";
+import { z } from "zod";
+import {
+  getHeader,
+  getRequestURL,
+  readRawBody,
+  setResponseHeader,
+  type H3Event,
+} from "h3";
+import { requireTwilioAuthToken } from "../../utils/useTwilio";
+import { broadcastWhatsAppIncoming } from "../../utils/whatsappIncomingWs";
 
 const TwilioInboundSchema = z.object({
   // Common Twilio inbound fields (subset; Twilio may include more)
@@ -20,97 +26,103 @@ const TwilioInboundSchema = z.object({
   NumMedia: z.string().optional(),
   ProfileName: z.string().optional(),
   WaId: z.string().optional(),
-  SmsStatus: z.string().optional()
-})
+  SmsStatus: z.string().optional(),
+});
 
 function parseFormUrlEncoded(raw: string): Record<string, string> {
-  const params = new URLSearchParams(raw)
-  const out: Record<string, string> = {}
-  for (const [k, v] of params.entries()) out[k] = v
-  return out
+  const params = new URLSearchParams(raw);
+  const out: Record<string, string> = {};
+  for (const [k, v] of params.entries()) out[k] = v;
+  return out;
 }
 
 function getPublicWebhookUrl(event: H3Event) {
-  const url = getRequestURL(event)
+  const url = getRequestURL(event);
 
   // Signature verification is sensitive to scheme/host.
   // In production behind a proxy, forwarded headers commonly reflect the public URL.
-  const forwardedProto = getHeader(event, 'x-forwarded-proto')
-  const forwardedHost = getHeader(event, 'x-forwarded-host')
+  const forwardedProto = getHeader(event, "x-forwarded-proto");
+  const forwardedHost = getHeader(event, "x-forwarded-host");
 
-  if (forwardedProto) url.protocol = `${forwardedProto}:`
-  if (forwardedHost) url.host = forwardedHost
+  if (forwardedProto) url.protocol = `${forwardedProto}:`;
+  if (forwardedHost) url.host = forwardedHost;
 
-  return url.href
+  return url.href;
 }
 
+ import { requireTwilioClient } from '../../utils/useTwilio'
+const client = requireTwilioClient()
 export default defineEventHandler(async (event) => {
-  const authToken = requireTwilioAuthToken()
+  const authToken = requireTwilioAuthToken();
 
-  const signature = getHeader(event, 'x-twilio-signature') ?? ''
-  const rawBody = (await readRawBody(event)) ?? ''
+  const signature = getHeader(event, "x-twilio-signature") ?? "";
+  const rawBody = (await readRawBody(event)) ?? "";
 
-  const params = parseFormUrlEncoded(rawBody)
-  const webhookUrl = getPublicWebhookUrl(event)
+  const params = parseFormUrlEncoded(rawBody);
+  const webhookUrl = getPublicWebhookUrl(event);
 
-  const valid = twilio.validateRequest(authToken, signature, webhookUrl, params)
-  // if (!valid) {
-  //   throw createError({
-  //     statusCode: 403,
-  //     statusMessage: 'Invalid Twilio signature'
-  //   })
-  // }
-
-  const parsed = TwilioInboundSchema.safeParse(params)
-  // if (!parsed.success) {
-  //   throw createError({
-  //     statusCode: 400,
-  //     statusMessage: 'Invalid Twilio webhook payload',
-  //     data: parsed.error.flatten()
-  //   })
-  // }
-
-
-// WhatsApp API test panel (client-side)
-const waTo = 'whatsapp:+972537816874'
-let waBody = 'Hello from /webhok'
- 
-
- 
-  try {
-    const res =  $fetch('/api/whatsapp/send', {
-      method: 'POST',
-      body: {
-        to: waTo,
-        body: waBody
-      }
+  const valid = twilio.validateRequest(
+    authToken,
+    signature,
+    webhookUrl,
+    params
+  );
+  if (!valid) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: 'Invalid Twilio signature'
     })
- console.log(res);
-  } catch (err: any) {
+  }
+
+  const parsed = TwilioInboundSchema.safeParse(params);
+  if (!parsed.success) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Invalid Twilio webhook payload',
+      data: parsed.error.flatten()
+    })
+  }
+
+  // WhatsApp API test panel (client-side)
+  const waTo = "whatsapp:+972537816874";
+  let waBody = "Hello from /webhok";
+
+
+try {
+  
+  client.messages
+    .create({
+      from: "whatsapp:+14155238886",
+      contentSid: "HXb5b62575e6e4ff6129ad7c8efe1f983e",
+      contentVariables: '{"1":"12/1","2":"3pm"}',
+      to: "whatsapp:+972537816874",
+    })
+    .then((message: any) => console.log(message.sid)) 
+  } catch (err) {
+
      throw createError({
-      statusCode: 502,
-      statusMessage:  err?.data?.statusMessage || err?.statusMessage || err?.message || 'Failed to send',
-      data: err   
+      statusCode: 400,
+      statusMessage: 'Fialed to send masseage ',
+      data: err
     })
-   
-  }  
-
- 
+  }
 
 
-  const body = params.Body ?? ''
-  const from = params.From ?? ''
-  const to = params.To ?? ''
-  const messageSid = params.MessageSid ?? params.SmsMessageSid ?? params.SmsSid ?? ''
+
+  const body = params.Body ?? "";
+  const from = params.From ?? "";
+  const to = params.To ?? "";
+  const messageSid =
+    params.MessageSid ?? params.SmsMessageSid ?? params.SmsSid ?? "";
 
   // Replace this with persistence (e.g., Supabase) or forwarding to your internal systems.
-  console.info('[twilio] inbound message received', {
+  console.info("[twilio] inbound message received", {
     messageSid,
     from,
     to,
     body,
-    numMedia: params.NumMedia
-  })
+    numMedia: params.NumMedia,
+  });
 
   // Broadcast to any connected frontend WS clients
   broadcastWhatsAppIncoming({
@@ -118,12 +130,12 @@ let waBody = 'Hello from /webhok'
     from,
     to,
     body,
-    numMedia: params.NumMedia
+    numMedia: params.NumMedia,
     // If you want the full raw payload on the frontend, uncomment:
     // params
-  })
+  });
 
   // Twilio accepts empty 200 responses, but returning TwiML is explicit and safe.
-  setResponseHeader(event, 'content-type', 'text/xml; charset=utf-8')
-  return `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`
-})
+  setResponseHeader(event, "content-type", "text/xml; charset=utf-8");
+  return `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`;
+});
