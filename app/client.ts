@@ -97,28 +97,58 @@ const REVEAL_SELECTOR = '.reveal'
 const REVEAL_VISIBLE_CLASS = 'is-visible'
 const SCROLL_REVEAL_GLOBAL_KEY = '__nuxtScrollRevealInitialized__'
 
+const SCROLL_REVEAL_DEBUG = import.meta.dev
+function srDebug(message: string, data?: Record<string, unknown>) {
+  if (!SCROLL_REVEAL_DEBUG) return
+  // Keep logs compact but actionable for hydration mismatch diagnosis.
+  // eslint-disable-next-line no-console
+  console.debug(`[scroll-reveal] ${message}`, data ?? {})
+}
+
 function revealMarkVisible(el: Element) {
   el.classList.add(REVEAL_VISIBLE_CLASS)
 }
 
 function revealAllVisible(root: ParentNode = document) {
-  root.querySelectorAll(REVEAL_SELECTOR).forEach(revealMarkVisible)
+  const els = Array.from(root.querySelectorAll(REVEAL_SELECTOR))
+  srDebug('revealAllVisible()', {
+    count: els.length,
+    readyState: document.readyState,
+    time: Math.round(performance.now()),
+    sampleClassNames: els.slice(0, 3).map((e) => (e as HTMLElement).className)
+  })
+  els.forEach(revealMarkVisible)
 }
 
 export function initScrollReveal(options: ScrollRevealOptions = {}) {
   if (!import.meta.client) return
 
+  srDebug('initScrollReveal() called', {
+    readyState: document.readyState,
+    time: Math.round(performance.now())
+  })
+
   const w = window as unknown as Record<string, unknown>
-  if (w[SCROLL_REVEAL_GLOBAL_KEY]) return
+  if (w[SCROLL_REVEAL_GLOBAL_KEY]) {
+    srDebug('skipping: already initialized', {})
+    return
+  }
   w[SCROLL_REVEAL_GLOBAL_KEY] = true
 
   const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+  srDebug('environment', {
+    prefersReducedMotion,
+    hasIntersectionObserver: typeof window.IntersectionObserver !== 'undefined'
+  })
+
   if (prefersReducedMotion) {
+    srDebug('branch: reduced-motion => revealAllVisible immediately (can cause hydration mismatch if before hydrate)', {})
     revealAllVisible(document)
     return
   }
 
   if (typeof window.IntersectionObserver === 'undefined') {
+    srDebug('branch: no IntersectionObserver => revealAllVisible immediately (can cause hydration mismatch if before hydrate)', {})
     revealAllVisible(document)
     return
   }
@@ -141,7 +171,14 @@ export function initScrollReveal(options: ScrollRevealOptions = {}) {
   )
 
   const observeIn = (root: ParentNode) => {
-    root.querySelectorAll(REVEAL_SELECTOR).forEach((el) => {
+    const els = Array.from(root.querySelectorAll(REVEAL_SELECTOR))
+    srDebug('observeIn()', {
+      count: els.length,
+      readyState: document.readyState,
+      time: Math.round(performance.now())
+    })
+
+    els.forEach((el) => {
       if (el.classList.contains(REVEAL_VISIBLE_CLASS)) return
       if (observed.has(el)) return
       observed.add(el)
@@ -150,10 +187,22 @@ export function initScrollReveal(options: ScrollRevealOptions = {}) {
   }
 
   // Initial scan (after mount/hydration frame)
-  requestAnimationFrame(() => observeIn(document))
+  requestAnimationFrame(() => {
+    srDebug('requestAnimationFrame() tick - running initial observeIn(document)', {
+      readyState: document.readyState,
+      time: Math.round(performance.now())
+    })
+    observeIn(document)
+  })
 
   // Re-scan for route changes / async components / hydration updates
   const mo = new MutationObserver((mutations) => {
+    srDebug('MutationObserver callback', {
+      mutationCount: mutations.length,
+      readyState: document.readyState,
+      time: Math.round(performance.now())
+    })
+
     for (const mutation of mutations) {
       for (const node of mutation.addedNodes) {
         if (!(node instanceof Element)) continue
@@ -166,5 +215,6 @@ export function initScrollReveal(options: ScrollRevealOptions = {}) {
   mo.observe(document.body, { childList: true, subtree: true })
 }
 
-// Initialize automatically on the client (module is imported by pages/app layout).
-initScrollReveal()
+// Note: scroll-reveal is intentionally NOT auto-initialized at module-eval time.
+// It must be started after Nuxt has mounted/hydrated (see client-only plugin),
+// otherwise it can mutate `.reveal` classes pre-hydration and cause hydration mismatches.

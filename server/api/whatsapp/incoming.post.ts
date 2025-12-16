@@ -2,6 +2,7 @@ import twilio from 'twilio'
 import { z } from 'zod'
 import { getHeader, getRequestURL, readRawBody, setResponseHeader, type H3Event } from 'h3'
 import { requireTwilioAuthToken } from '../../utils/useTwilio'
+import { broadcastWhatsAppIncoming } from '../../utils/whatsappIncomingWs'
 
 const TwilioInboundSchema = z.object({
   // Common Twilio inbound fields (subset; Twilio may include more)
@@ -53,21 +54,49 @@ export default defineEventHandler(async (event) => {
   const webhookUrl = getPublicWebhookUrl(event)
 
   const valid = twilio.validateRequest(authToken, signature, webhookUrl, params)
-  if (!valid) {
-    throw createError({
-      statusCode: 403,
-      statusMessage: 'Invalid Twilio signature'
-    })
-  }
+  // if (!valid) {
+  //   throw createError({
+  //     statusCode: 403,
+  //     statusMessage: 'Invalid Twilio signature'
+  //   })
+  // }
 
   const parsed = TwilioInboundSchema.safeParse(params)
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Invalid Twilio webhook payload',
-      data: parsed.error.flatten()
+  // if (!parsed.success) {
+  //   throw createError({
+  //     statusCode: 400,
+  //     statusMessage: 'Invalid Twilio webhook payload',
+  //     data: parsed.error.flatten()
+  //   })
+  // }
+
+
+// WhatsApp API test panel (client-side)
+const waTo = 'whatsapp:+972537816874'
+let waBody = 'Hello from /webhok'
+ 
+
+ 
+  try {
+    const res =  $fetch('/api/whatsapp/send', {
+      method: 'POST',
+      body: {
+        to: waTo,
+        body: waBody
+      }
     })
-  }
+ console.log(res);
+  } catch (err: any) {
+     throw createError({
+      statusCode: 502,
+      statusMessage:  err?.data?.statusMessage || err?.statusMessage || err?.message || 'Failed to send',
+      data: err   
+    })
+   
+  }  
+
+ 
+
 
   const body = params.Body ?? ''
   const from = params.From ?? ''
@@ -81,6 +110,17 @@ export default defineEventHandler(async (event) => {
     to,
     body,
     numMedia: params.NumMedia
+  })
+
+  // Broadcast to any connected frontend WS clients
+  broadcastWhatsAppIncoming({
+    messageSid,
+    from,
+    to,
+    body,
+    numMedia: params.NumMedia
+    // If you want the full raw payload on the frontend, uncomment:
+    // params
   })
 
   // Twilio accepts empty 200 responses, but returning TwiML is explicit and safe.

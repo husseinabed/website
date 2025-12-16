@@ -3,9 +3,9 @@
   <div class="bg-white text-slate-900">
     <section class="border-b border-slate-200 bg-gradient-to-r from-white via-sky-50 to-white">
       <div class="reveal mx-auto max-w-5xl px-6 py-10">
-        <p class="text-sm font-semibold text-sky-700">{{ ar.booking.headerKicker }}</p>
-        <h1 class="mt-2 text-3xl font-bold text-slate-900">{{ ar.booking.title }}</h1>
-        <p class="mt-2 text-slate-600">{{ ar.booking.subtitle }}</p>
+        <p class="text-sm font-semibold text-sky-700">{{ bookingCopy.headerKicker }}</p>
+        <h1 class="mt-2 text-3xl font-bold text-slate-900">{{ bookingCopy.title }}</h1>
+        <p class="mt-2 text-slate-600">{{ bookingCopy.subtitle }}</p>
       </div>
     </section>
 
@@ -34,54 +34,33 @@
         </div>
 
         <div class="reveal card border border-slate-200 p-6" style="--reveal-delay: 140ms">
-          <component
-            :is="activeComponent"
-            :model-value="form"
-            @update:modelValue="(v) => Object.assign(form, v)"
-            :errors="errors"
-          />
+          <component :is="activeComponent" :model-value="form" @update:modelValue="(v) => Object.assign(form, v)" :errors="errors" />
 
           <!-- WhatsApp quick CTA (no redesign): sends a prefilled message with current selections -->
           <div class="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p class="text-sm font-semibold text-slate-900">{{ ar.booking.whatsappQuickCta.title }}</p>
-            <p class="mt-1 text-sm text-slate-700">{{ ar.booking.whatsappQuickCta.subtitle }}</p>
+            <p class="text-sm font-semibold text-slate-900">{{ bookingCopy.whatsappQuickCta.title }}</p>
+            <p class="mt-1 text-sm text-slate-700">{{ bookingCopy.whatsappQuickCta.subtitle }}</p>
             <a :href="whatsAppPrefillHref" class="button-secondary mt-3 w-full text-center" target="_blank" rel="noopener">
-              {{ ar.booking.whatsappQuickCta.button }}
+              {{ bookingCopy.whatsappQuickCta.button }}
             </a>
           </div>
 
           <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
-            <button
-              type="button"
-              class="button-secondary w-full sm:w-auto"
-              :disabled="currentStep === 0 || loading"
-              @click="prev"
-            >
-              {{ ar.booking.buttons.back }}
+            <button type="button" class="button-secondary w-full sm:w-auto" :disabled="currentStep === 0 || loading" @click="prev">
+              {{ bookingCopy.buttons.back }}
             </button>
             <div class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-              <button
-                v-if="!isLastStep"
-                type="button"
-                class="button-primary w-full sm:w-auto"
-                :disabled="loading"
-                @click="next"
-              >
-                {{ ar.booking.buttons.continue }}
+              <button v-if="!isLastStep" type="button" class="button-primary w-full sm:w-auto" :disabled="loading" @click="next">
+                {{ bookingCopy.buttons.continue }}
               </button>
-              <button
-                v-else
-                type="button"
-                class="button-primary w-full sm:w-auto"
-                :disabled="loading"
-                @click="submit"
-              >
-                {{ loading ? ar.booking.buttons.submitting : ar.booking.buttons.submit }}
+              <button v-else type="button" class="button-primary w-full sm:w-auto" :disabled="loading" @click="submit">
+                {{ loading ? bookingCopy.buttons.submitting : bookingCopy.buttons.submit }}
               </button>
             </div>
           </div>
+
           <p v-if="submitError" class="mt-4 text-sm text-red-600">{{ submitError }}</p>
-          <p v-if="submitSuccess" class="mt-4 text-sm text-green-600">{{ ar.booking.success }}</p>
+          <p v-if="submitSuccess" class="mt-4 text-sm text-green-600">{{ bookingCopy.success }}</p>
         </div>
       </div>
     </section>
@@ -92,22 +71,16 @@
 // @ts-nocheck
 import { reactive, computed, ref, defineAsyncComponent } from 'vue'
 import { z } from 'zod'
-import { client, buildWhatsAppLink } from '../app/client'
-import { ar } from '../app/content/ar'
+import { buildWhatsAppLink } from '~/client'
+import { siteConfig } from '~/site.config'
+import { buildMeta } from '~/utils/seo'
+
+const bookingCopy = siteConfig.bookingPage
 
 // @ts-expect-error Nuxt macro auto-imported
-definePageMeta({
-  title: ar.seo.book.title,
-  description: ar.seo.book.description
-})
+useHead(buildMeta({ page: 'book' }))
 
-// @ts-expect-error Nuxt macro auto-imported
-useHead({
-  title: ar.seo.book.title,
-  meta: [{ name: 'description', content: ar.seo.book.description }]
-})
-
-const steps = ar.booking.steps
+const steps = bookingCopy.steps
 
 type StepId = 'service' | 'time' | 'contact' | 'confirm'
 
@@ -129,27 +102,38 @@ const loading = ref(false)
 const submitError = ref('')
 const submitSuccess = ref(false)
 
-const allowedServices = client.services as unknown as [string, ...string[]]
+const allowedServiceTitles = siteConfig.services.map((s) => s.title)
+const allowedServiceSet = new Set(allowedServiceTitles)
 
-const serviceSchema = z.object({
-  service_type: z.enum(allowedServices)
-})
+const serviceSchema = z
+  .object({
+    service_type: z.string().min(1, bookingCopy.serviceStep.errorRequired)
+  })
+  .refine((v) => allowedServiceSet.has(v.service_type), {
+    path: ['service_type'],
+    message: bookingCopy.serviceStep.errorRequired
+  })
 
 const timeSchema = z.object({
-  preferred_date: z.string().min(1, ar.booking.timeStep.errors.dateRequired),
-  preferred_time_range: z.enum(['morning', 'afternoon', 'evening'], { message: ar.booking.timeStep.errors.timeRequired })
+  preferred_date: z.string().min(1, bookingCopy.timeStep.errors.dateRequired),
+  preferred_time_range: z.enum(['morning', 'afternoon', 'evening'], { message: bookingCopy.timeStep.errors.timeRequired })
 })
 
 const contactSchema = z.object({
-  full_name: z.string().min(2, 'الاسم مطلوب'),
-  phone_whatsapp: z.string().min(6, 'رقم الهاتف/واتساب مطلوب'),
-  email: z.string().email('بريد غير صالح').optional().or(z.literal('')),
+  full_name: z.string().min(2, bookingCopy.contactStep.errors.nameRequired),
+  phone_whatsapp: z.string().min(6, bookingCopy.contactStep.errors.phoneRequired),
+  email: z.string().email(bookingCopy.contactStep.errors.emailInvalid).optional().or(z.literal('')),
   message: z.string().optional()
 })
 
-const confirmSchema = z.object({
-  consent_contact: z.literal(true)
-})
+const confirmSchema = z
+  .object({
+    consent_contact: z.boolean()
+  })
+  .refine((v) => v.consent_contact === true, {
+    path: ['consent_contact'],
+    message: bookingCopy.confirmStep.consentError
+  })
 
 const stepComponents: Record<StepId, any> = {
   service: defineAsyncComponent(() => Promise.resolve(ServiceStep)),
@@ -162,20 +146,30 @@ const activeComponent = computed(() => stepComponents[steps[currentStep.value].i
 const isLastStep = computed(() => currentStep.value === steps.length - 1)
 
 const preferredTimeLabel = computed(() => {
-  const found = ar.booking.timeStep.timeOptions.find((o) => o.value === (form.preferred_time_range as any))
+  const found = bookingCopy.timeStep.timeOptions.find((o) => o.value === (form.preferred_time_range as any))
   return found?.label
 })
 
-const whatsAppPrefillHref = computed(() => {
-  const text = ar.booking.whatsappPrefill({
-    serviceLabel: form.service_type || undefined,
-    preferredDate: form.preferred_date || undefined,
-    preferredTimeLabel: preferredTimeLabel.value || undefined,
-    fullName: form.full_name || undefined,
-    phone: form.phone_whatsapp || undefined,
-    message: form.message || undefined
+function applyTokens(value: string, vars: Record<string, string>): string {
+  return (value ?? '').replace(/\{(\w+)\}/g, (_, token: string) => {
+    return vars[token] ?? `{${token}}`
   })
-  return buildWhatsAppLink(client.whatsapp, text)
+}
+
+const whatsAppPrefillHref = computed(() => {
+  const vars = {
+    clinicName: siteConfig.clinicName,
+    city: siteConfig.city,
+    serviceLabel: form.service_type || '',
+    preferredDate: form.preferred_date || '',
+    preferredTimeLabel: preferredTimeLabel.value || '',
+    fullName: form.full_name || '',
+    phone: form.phone_whatsapp || '',
+    message: form.message || ''
+  }
+
+  const text = applyTokens(bookingCopy.whatsappPrefillTemplate, vars)
+  return buildWhatsAppLink(siteConfig.whatsapp, text)
 })
 
 function validateStep(idx: number): boolean {
@@ -236,26 +230,23 @@ async function submit() {
       }
     }, 600)
   } catch (e: any) {
-    submitError.value = e?.data?.message || ar.booking.errors.submitFailed
+    submitError.value = e?.data?.message || bookingCopy.errors.submitFailed
   } finally {
     loading.value = false
   }
 }
-</script>
-
-<script lang="ts">
-import { ar as arContent } from '../app/content/ar'
 
 /**
  * Inline lightweight components for each step to avoid separate files.
+ * (Uses config-driven copy from `siteConfig.bookingPage`.)
  */
 const ServiceStep = {
   props: ['modelValue', 'errors'],
   emits: ['update:modelValue'],
   template: `
     <div class="space-y-4">
-      <h2 class="text-2xl font-semibold text-slate-900">${arContent.booking.serviceStep.title}</h2>
-      <p class="text-slate-600">${arContent.booking.serviceStep.subtitle}</p>
+      <h2 class="text-2xl font-semibold text-slate-900">${bookingCopy.serviceStep.title}</h2>
+      <p class="text-slate-600">${bookingCopy.serviceStep.subtitle}</p>
       <div class="grid gap-3 md:grid-cols-2">
         <label class="card cursor-pointer border p-4 hover:border-sky-300" v-for="option in options" :key="option.value">
           <input
@@ -280,7 +271,7 @@ const ServiceStep = {
   `,
   data() {
     return {
-      options: arContent.booking.serviceStep.options
+      options: siteConfig.services.map((s) => ({ value: s.title, label: s.title, desc: s.description }))
     }
   }
 }
@@ -290,11 +281,11 @@ const TimeStep = {
   emits: ['update:modelValue'],
   template: `
     <div class="space-y-4">
-      <h2 class="text-2xl font-semibold text-slate-900">${arContent.booking.timeStep.title}</h2>
-      <p class="text-slate-600">${arContent.booking.timeStep.subtitle}</p>
+      <h2 class="text-2xl font-semibold text-slate-900">${bookingCopy.timeStep.title}</h2>
+      <p class="text-slate-600">${bookingCopy.timeStep.subtitle}</p>
       <div class="grid gap-4 md:grid-cols-2">
         <div>
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.timeStep.dateLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.timeStep.dateLabel}</label>
           <input
             type="date"
             class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
@@ -304,7 +295,7 @@ const TimeStep = {
           <p v-if="errors.preferred_date" class="text-sm text-red-600">{{ errors.preferred_date }}</p>
         </div>
         <div>
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.timeStep.timeLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.timeStep.timeLabel}</label>
           <select
             class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
             :value="modelValue.preferred_time_range"
@@ -319,7 +310,7 @@ const TimeStep = {
   `,
   data() {
     return {
-      timeOptions: arContent.booking.timeStep.timeOptions
+      timeOptions: bookingCopy.timeStep.timeOptions
     }
   }
 }
@@ -329,11 +320,11 @@ const ContactStep = {
   emits: ['update:modelValue'],
   template: `
     <div class="space-y-4">
-      <h2 class="text-2xl font-semibold text-slate-900">${arContent.booking.contactStep.title}</h2>
-      <p class="text-slate-600">${arContent.booking.contactStep.subtitle}</p>
+      <h2 class="text-2xl font-semibold text-slate-900">${bookingCopy.contactStep.title}</h2>
+      <p class="text-slate-600">${bookingCopy.contactStep.subtitle}</p>
       <div class="grid gap-4 md:grid-cols-2">
         <div>
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.contactStep.nameLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.contactStep.nameLabel}</label>
           <input
             class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
             :value="modelValue.full_name"
@@ -342,25 +333,31 @@ const ContactStep = {
           <p v-if="errors.full_name" class="text-sm text-red-600">{{ errors.full_name }}</p>
         </div>
         <div>
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.contactStep.phoneLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.contactStep.phoneLabel}</label>
           <input
-            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none field-ltr"
             :value="modelValue.phone_whatsapp"
             @input="$emit('update:modelValue', { ...modelValue, phone_whatsapp: $event.target.value })"
           />
           <p v-if="errors.phone_whatsapp" class="text-sm text-red-600">{{ errors.phone_whatsapp }}</p>
         </div>
         <div>
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.contactStep.emailLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.contactStep.emailLabel}</label>
           <input
-            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
+            type="email"
+            inputmode="email"
+            autocomplete="email"
+            class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none field-ltr"
             :value="modelValue.email"
             @input="$emit('update:modelValue', { ...modelValue, email: $event.target.value })"
           />
           <p v-if="errors.email" class="text-sm text-red-600">{{ errors.email }}</p>
         </div>
         <div class="md:col-span-2">
-          <label class="block text-sm font-semibold text-slate-800">${arContent.booking.contactStep.messageLabel}</label>
+          <label class="block text-sm font-semibold text-slate-800">${bookingCopy.contactStep.messageLabel}</label>
           <textarea
             rows="3"
             class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 focus:border-sky-400 focus:outline-none"
@@ -378,8 +375,8 @@ const ConfirmStep = {
   emits: ['update:modelValue'],
   template: `
     <div class="space-y-4">
-      <h2 class="text-2xl font-semibold text-slate-900">${arContent.booking.confirmStep.title}</h2>
-      <p class="text-slate-600">${arContent.booking.confirmStep.subtitle}</p>
+      <h2 class="text-2xl font-semibold text-slate-900">${bookingCopy.confirmStep.title}</h2>
+      <p class="text-slate-600">${bookingCopy.confirmStep.subtitle}</p>
       <label class="flex items-start gap-3 rounded-lg border border-slate-200 p-4">
         <input
           type="checkbox"
@@ -388,12 +385,12 @@ const ConfirmStep = {
           @change="$emit('update:modelValue', { ...modelValue, consent_contact: $event.target.checked })"
         />
         <span class="text-sm text-slate-800">
-          ${arContent.booking.confirmStep.consentText}
+          ${bookingCopy.confirmStep.consentText}
         </span>
       </label>
       <p v-if="errors.consent_contact" class="text-sm text-red-600">{{ errors.consent_contact }}</p>
       <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <p class="text-sm font-semibold text-slate-900">${arContent.booking.confirmStep.whatNextTitle}</p>
+        <p class="text-sm font-semibold text-slate-900">${bookingCopy.confirmStep.whatNextTitle}</p>
         <ul class="mt-2 space-y-1 text-sm text-slate-700">
           <li v-for="line in whatNextBullets" :key="line">• {{ line }}</li>
         </ul>
@@ -402,7 +399,7 @@ const ConfirmStep = {
   `,
   data() {
     return {
-      whatNextBullets: arContent.booking.confirmStep.whatNextBullets
+      whatNextBullets: bookingCopy.confirmStep.whatNextBullets
     }
   }
 }

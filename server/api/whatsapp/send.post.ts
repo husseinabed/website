@@ -37,12 +37,41 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
+    const requestId =
+      (event.node.req.headers['x-request-id'] as string | undefined) ??
+      (globalThis.crypto?.randomUUID?.() as string | undefined) ??
+      `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
+    const maskPhone = (v: string) => {
+      const s = String(v ?? '')
+      if (!s) return s
+      const withoutPrefix = s.startsWith('whatsapp:') ? s.slice('whatsapp:'.length) : s
+      const last4 = withoutPrefix.slice(-4)
+      return `${s.startsWith('whatsapp:') ? 'whatsapp:' : ''}***${last4}`
+    }
+
+    console.info('[twilio] whatsapp send start', {
+      requestId,
+      from: maskPhone(from),
+      fromHasWhatsAppPrefix: from?.startsWith?.('whatsapp:'),
+      kind: 'body' in parsed.data ? 'text' : 'template'
+    })
+
     if ('body' in parsed.data) {
+      console.info('[twilio] whatsapp send payload', {
+        requestId,
+        to: maskPhone(parsed.data.to),
+        toHasWhatsAppPrefix: parsed.data.to?.startsWith?.('whatsapp:'),
+        bodyLength: parsed.data.body?.length
+      })
+
       const message = await client.messages.create({
         from,
         to: parsed.data.to,
         body: parsed.data.body
       })
+
+      console.info('[twilio] whatsapp send success', { requestId, sid: message.sid })
 
       return {
         ok: true,
@@ -54,6 +83,14 @@ export default defineEventHandler(async (event) => {
     const contentVariablesJson =
       typeof contentVariables === 'string' ? contentVariables : JSON.stringify(contentVariables)
 
+    console.info('[twilio] whatsapp send payload', {
+      requestId,
+      to: maskPhone(to),
+      toHasWhatsAppPrefix: to?.startsWith?.('whatsapp:'),
+      contentSid,
+      contentVariablesLength: contentVariablesJson?.length
+    })
+
     const message = await client.messages.create({
       from,
       to,
@@ -61,11 +98,22 @@ export default defineEventHandler(async (event) => {
       contentVariables: contentVariablesJson
     })
 
+    console.info('[twilio] whatsapp send success', { requestId, sid: message.sid })
+
     return {
       ok: true,
       sid: message.sid
     }
   } catch (err: any) {
+    // Log richer details server-side (do not leak secrets to client)
+    console.error('[twilio] whatsapp send failed', {
+      code: err?.code,
+      status: err?.status,
+      message: err?.message,
+      moreInfo: err?.moreInfo,
+      details: err?.details
+    })
+
     // Avoid leaking secrets; send minimal error info back to client
     throw createError({
       statusCode: 502,
